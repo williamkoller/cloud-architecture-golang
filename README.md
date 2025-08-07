@@ -1,3 +1,5 @@
+[![Deploy Lambda Go to AWS](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/deploy.yml/badge.svg)](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/deploy.yml)
+
 # 🚀 Lambda Go com Terraform na AWS
 
 Este projeto implementa uma função **AWS Lambda** escrita em Go, empacotada como imagem Docker e provisionada automaticamente com **Terraform**.
