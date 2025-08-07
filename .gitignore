@@ -1,0 +1,7 @@
+infra/env/*
+infra/.terraform.*
+infra/.terraform/
+infra/terraform.*
+node_modules/
+bootstrap
+build/

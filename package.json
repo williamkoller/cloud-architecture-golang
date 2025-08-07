@@ -1,0 +1,12 @@
+{
+  "name": "cloud-architecture-golang",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "./handler.sh"
+  },
+  "devDependencies": {
+    "serverless": "3.40.0",
+    "serverless-offline": "12.0.4"
+  }
+}

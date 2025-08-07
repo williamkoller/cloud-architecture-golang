@@ -1,0 +1,18 @@
+service: go-api
+
+provider:
+  name: aws
+  region: us-east-1
+
+ecr:
+  images:
+    appimage:
+      path: .
+
+functions:
+  app:
+    image: appimage
+    events:
+      - httpApi:
+          path: /health
+          method: GET
