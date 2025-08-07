@@ -1,45 +1,66 @@
-name: Deploy Lambda
+name: Deploy Lambda Go to AWS
 
 on:
   push:
     branches:
       - main
-      - staging
+    paths:
+      - 'src/**'
+      - 'Dockerfile'
+      - '.github/workflows/deploy.yml'
+      - 'infra/**'
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: staging-lambda-go
+  IMAGE_TAG: latest
+  FUNCTION_NAME: staging-golang-api
 
 jobs:
   deploy:
-    name: Deploy to AWS Lambda
     runs-on: ubuntu-latest
 
-    strategy:
-      matrix:
-        env: [staging, production]
-
-    if: github.ref == 'refs/heads/' + matrix.env
-
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.22'
 
-      - name: Build Go binary
-        run: |
-          mkdir -p build/${{ matrix.env }}
-          GOOS=linux GOARCH=amd64 go build -o build/${{ matrix.env }}/bootstrap app/main.go
-          cd build/${{ matrix.env }} && zip bootstrap.zip bootstrap
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy with Terraform
+      - name: Build Go binary
         run: |
-          cd infra
-          terraform init
-          terraform apply -auto-approve -var-file="env/${{ matrix.env }}.tfvars"
+          cd src
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bootstrap main.go
+          cd ..
+
+      - name: Build Docker image
+        run: |
+          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+
+      - name: Login to Amazon ECR
+        run: |
+          aws ecr get-login-password --region $AWS_REGION \
+            | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+
+      - name: Tag Docker image
+        run: |
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Push to ECR
+        run: |
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Update Lambda function
+        run: |
+          aws lambda update-function-code \
+            --function-name $FUNCTION_NAME \
+            --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
