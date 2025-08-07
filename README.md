@@ -51,9 +51,3 @@ A ideia é simples: você escreve seu código em Go ➡ compila ➡ empacota no 
 terraform init
 terraform apply -var="env=staging" -var="alert_email=seu@email.com" -auto-approve
 ```
-
----
-
-## 🖼️ Diagrama Visual
-
-![Fluxo AWS Lambda com Go e Terraform](aws_lambda_go_terraform_flow.png)
