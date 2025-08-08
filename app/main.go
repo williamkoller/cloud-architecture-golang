@@ -20,8 +20,10 @@ type UserResponse struct {
 	Email string `json:"email"`
 }
 
-var ginLambda *ginadapter.GinLambda
-var router *gin.Engine
+var (
+	router      *gin.Engine
+	ginLambdaV2 *ginadapter.GinLambdaV2
+)
 
 func mapToUserResponse(u User) UserResponse {
 	return UserResponse{
@@ -31,13 +33,15 @@ func mapToUserResponse(u User) UserResponse {
 }
 
 func init() {
+	gin.SetMode(gin.ReleaseMode)
 	router = gin.Default()
+
 	router.GET("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "OK")
 	})
 	router.GET("/user", handlerUsers)
 
-	ginLambda = ginadapter.New(router)
+	ginLambdaV2 = ginadapter.NewV2(router)
 }
 
 func handlerUsers(c *gin.Context) {
@@ -45,7 +49,6 @@ func handlerUsers(c *gin.Context) {
 		Name:  "William K",
 		Email: "william@mail.com",
 	}
-
 	response := mapToUserResponse(user)
 	c.JSON(http.StatusOK, response)
 }
@@ -53,8 +56,10 @@ func handlerUsers(c *gin.Context) {
 func main() {
 	if os.Getenv("LOCAL") == "true" {
 		log.Println("Running locally on :8080")
-		router.Run(":8080")
-	} else {
-		lambda.Start(ginLambda.Proxy)
+		if err := router.Run(":8080"); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
+	lambda.Start(ginLambdaV2.ProxyWithContext)
 }
