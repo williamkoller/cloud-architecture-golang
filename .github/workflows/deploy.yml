@@ -22,19 +22,22 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (access keys)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-session-name: gha-deploy
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Ensure ECR repo exists
+        run: |
+          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1 \
+            || aws ecr create-repository --repository-name "$ECR_REPOSITORY" >/dev/null
 
       - name: Login to ECR
         run: |
@@ -57,24 +60,50 @@ jobs:
       - name: Update Lambda code to new image
         run: |
           aws lambda update-function-code \
-            --function-name $FUNCTION_NAME \
+            --function-name "$FUNCTION_NAME" \
             --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG \
             --no-cli-pager
 
       - name: Wait for function to update
-        run: |
-          aws lambda wait function-updated --function-name $FUNCTION_NAME
+        run: aws lambda wait function-updated --function-name "$FUNCTION_NAME"
 
       - name: Publish new version
         id: publish
         run: |
-          VERSION=$(aws lambda publish-version --function-name $FUNCTION_NAME --query 'Version' --output text)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          VERSION=$(aws lambda publish-version --function-name "$FUNCTION_NAME" --query 'Version' --output text)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Published version: $VERSION"
 
-      - name: Point alias to new version
+      - name: Upsert alias "staging"
         run: |
-          aws lambda update-alias \
-            --function-name $FUNCTION_NAME \
-            --name staging \
-            --function-version ${{ steps.publish.outputs.version }} \
-            --no-cli-pager
+          set -euo pipefail
+          ALIAS="staging"
+          VERSION="${{ steps.publish.outputs.version }}"
+          if aws lambda get-alias --function-name "$FUNCTION_NAME" --name "$ALIAS" >/dev/null 2>&1; then
+            aws lambda update-alias --function-name "$FUNCTION_NAME" --name "$ALIAS" --function-version "$VERSION" --no-cli-pager
+          else
+            aws lambda create-alias --function-name "$FUNCTION_NAME" --name "$ALIAS" --function-version "$VERSION" --no-cli-pager
+          fi
+
+      - name: Set provisioned concurrency (2)
+        run: |
+          aws lambda put-provisioned-concurrency-config \
+            --function-name "$FUNCTION_NAME" \
+            --qualifier staging \
+            --provisioned-concurrent-executions 2
+
+      - name: Wait PC to be READY
+        run: |
+          for i in {1..30}; do
+            STATUS=$(aws lambda get-provisioned-concurrency-config --function-name "$FUNCTION_NAME" --qualifier staging --query 'Status' --output text || true)
+            echo "Provisioned Concurrency Status: $STATUS"
+            if [ "$STATUS" = "READY" ]; then exit 0; fi
+            if [ "$STATUS" = "FAILED" ]; then echo "PC failed"; exit 1; fi
+            sleep 10
+          done
+          echo "Timeout waiting PC to be READY"; exit 1
+
+      - name: Show effective image digest
+        run: |
+          aws lambda get-function --function-name "$FUNCTION_NAME" --qualifier staging \
+            --query 'Code.ImageUri' --output text
