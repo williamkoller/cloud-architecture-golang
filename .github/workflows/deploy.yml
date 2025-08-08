@@ -112,18 +112,15 @@ jobs:
         id: pc
         run: |
           set -euo pipefail
-          # Coerção numérica e default
           TARGET_PC="${TARGET_PC:-2}"
           TARGET_PC=$((TARGET_PC + 0))
 
           echo "Requested TARGET_PC: ${TARGET_PC}"
 
-          # Unreserved da conta (limite que precisa SOBRAR no mínimo 10)
           UNRESERVED=$(aws lambda get-account-settings --query 'AccountLimit.UnreservedConcurrentExecutions' --output text)
           UNRESERVED=$((UNRESERVED + 0))
           echo "Account UnreservedConcurrentExecutions: ${UNRESERVED}"
 
-          # Regra: precisa sobrar >= 10 após reservar TARGET_PC
           if [ "${UNRESERVED}" -ge $((TARGET_PC + 10)) ]; then
             echo "Capacidade OK para provisioned concurrency = ${TARGET_PC}"
             echo "can_set_pc=true" >> "$GITHUB_OUTPUT"
@@ -137,7 +134,6 @@ jobs:
         if: steps.pc.outputs.can_set_pc == 'true'
         run: |
           set -euo pipefail
-          # Pequena espera para garantir propagação da nova versão/alias
           sleep 5
           aws lambda put-provisioned-concurrency-config \
             --function-name "$FUNCTION_NAME" \
