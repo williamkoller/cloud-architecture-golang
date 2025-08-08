@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "./handler.sh"
+    "build": "./scripts/handler.sh"
   },
   "devDependencies": {
     "serverless": "3.40.0",
