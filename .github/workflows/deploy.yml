@@ -2,8 +2,7 @@ name: Deploy Lambda Go to AWS
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - 'Dockerfile'
       - '.github/workflows/deploy.yml'
@@ -15,47 +14,66 @@ on:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: staging-lambda-go
-  IMAGE_TAG: latest
   FUNCTION_NAME: staging-golang-api
+  IMAGE_TAG: ${{ github.sha }} # tag imutável
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # se for usar OIDC (recomendado)
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
+          role-session-name: gha-deploy
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
+      - name: Login to ECR
         run: |
           aws ecr get-login-password --region $AWS_REGION \
             | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
 
-      - name: Build Docker image (multi-stage build)
+      - name: Build image
         run: |
-          docker build \
-            --platform linux/amd64 \
-            -t $ECR_REPOSITORY:$IMAGE_TAG .
+          docker build --platform linux/amd64 -t $ECR_REPOSITORY:$IMAGE_TAG .
 
-      - name: Tag Docker image
+      - name: Tag image for ECR
         run: |
           docker tag $ECR_REPOSITORY:$IMAGE_TAG \
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Push to ECR
+      - name: Push image
         run: |
-          docker push \
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Update Lambda function
+      - name: Update Lambda code to new image
         run: |
           aws lambda update-function-code \
             --function-name $FUNCTION_NAME \
-            --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+            --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG \
+            --no-cli-pager
+
+      - name: Wait for function to update
+        run: |
+          aws lambda wait function-updated --function-name $FUNCTION_NAME
+
+      - name: Publish new version
+        id: publish
+        run: |
+          VERSION=$(aws lambda publish-version --function-name $FUNCTION_NAME --query 'Version' --output text)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Point alias to new version
+        run: |
+          aws lambda update-alias \
+            --function-name $FUNCTION_NAME \
+            --name staging \
+            --function-version ${{ steps.publish.outputs.version }} \
+            --no-cli-pager
