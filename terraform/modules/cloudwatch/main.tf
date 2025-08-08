@@ -13,6 +13,6 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   threshold           = 1
   comparison_operator = "GreaterThanThreshold"
   alarm_description   = "Erros na Lambda"
-  dimensions = { FunctionName = var.lambda_function_name }
-  alarm_actions = var.sns_topic_arn == "" ? [] : [var.sns_topic_arn]
+  dimensions          = { FunctionName = var.lambda_function_name }
+  alarm_actions       = var.sns_topic_arn == "" ? [] : [var.sns_topic_arn]
 }
