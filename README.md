@@ -1,5 +1,4 @@
 [![CI - Build and Test](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/ci.yml/badge.svg)](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/ci.yml)
-[![CD - Deploy to AWS](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/deploy.yml/badge.svg)](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/deploy.yml)
 
 # 🚀 Lambda Go com Terraform Modular na AWS
 

@@ -24,7 +24,7 @@ env:
   ECR_REPOSITORY: staging-lambda-go
   FUNCTION_NAME: staging-golang-api
   IMAGE_TAG: ${{ github.sha }}
-  TARGET_PC: '0'
+  TARGET_PC: '2'
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
 
 jobs:
@@ -162,12 +162,29 @@ jobs:
           set -euo pipefail
           echo "⏳ Waiting for Lambda function to update..."
 
-          aws lambda wait function-updated \
-            --function-name "$FUNCTION_NAME" \
-            --cli-read-timeout 300 \
-            --cli-poll-delay 5
-
-          echo "✅ Lambda function updated successfully"
+          # Aguardar a função ser atualizada com polling manual
+          for i in {1..60}; do
+            STATUS=$(aws lambda get-function \
+              --function-name "$FUNCTION_NAME" \
+              --query 'Configuration.LastUpdateStatus' \
+              --output text)
+            
+            if [[ "$STATUS" == "Successful" ]]; then
+              echo "✅ Lambda function updated successfully"
+              break
+            elif [[ "$STATUS" == "Failed" ]]; then
+              echo "❌ Lambda function update failed"
+              exit 1
+            else
+              echo "Status: $STATUS - waiting... (attempt $i/60)"
+              sleep 5
+            fi
+            
+            if [[ $i -eq 60 ]]; then
+              echo "⏰ Timeout waiting for function update"
+              exit 1
+            fi
+          done
 
       - name: Publish new Lambda version
         id: publish
