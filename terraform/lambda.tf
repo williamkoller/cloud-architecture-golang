@@ -20,3 +20,17 @@ resource "aws_lambda_permission" "api_invoke" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.http_api.execution_arn}/*/*"
 }
+
+resource "aws_lambda_alias" "staging" {
+  name             = "staging"
+  function_name    = aws_lambda_function.golang_lambda.function_name
+  function_version = aws_lambda_function.golang_lambda.version
+}
+
+resource "aws_lambda_provisioned_concurrency_config" "pc" {
+  count = var.provisioned_concurrency > 0 ? 1 : 0
+
+  function_name                     = aws_lambda_function.golang_lambda.function_name
+  qualifier                         = aws_lambda_alias.staging.name
+  provisioned_concurrent_executions = var.provisioned_concurrency
+}
