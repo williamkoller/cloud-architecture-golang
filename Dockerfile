@@ -1,9 +1,25 @@
+FROM golang:1.24.5-alpine AS deps
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+FROM deps AS builder
+
+COPY app/ .
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+ARG CGO_ENABLED=0
+
+RUN CGO_ENABLED=$CGO_ENABLED GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -ldflags="-s -w" -o /out/bootstrap main.go
+
+
 FROM public.ecr.aws/lambda/provided:al2
 
-# o provided:al2 espera o bootstrap em /var/runtime
-COPY bootstrap ${LAMBDA_RUNTIME_DIR}/
+COPY --from=builder /out/bootstrap ${LAMBDA_RUNTIME_DIR}/bootstrap
 
-# garante que é executável (opcional se já veio com +x)
 RUN chmod +x ${LAMBDA_RUNTIME_DIR}/bootstrap
 
 CMD ["bootstrap"]
