@@ -14,6 +14,6 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   threshold           = 1
   comparison_operator = "GreaterThanThreshold"
   alarm_description   = "Erros na Lambda"
-  dimensions          = { FunctionName = aws_lambda_function.golang_lambda.function_name }
-  alarm_actions       = var.alert_topic_arn == "" ? [] : [var.alert_topic_arn]
+  dimensions = { FunctionName = aws_lambda_function.golang_lambda.function_name }
+  alarm_actions = var.alert_topic_arn == "" ? [] : [var.alert_topic_arn]
 }
