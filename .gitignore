@@ -1,20 +1,7 @@
-# Arquivos do Terraform
-terraform/*.tfstate
-terraform.tfstate
-terraform/*.tfstate.*
-terraform/*.tfvars
-terraform/.terraform/
-terraform/.terraform.lock.hcl
-terraform/crash.log
-terraform/*.backup
-terraform/override.tf
-terraform/override.tf.json
-terraform/*_override.tf
-terraform/*_override.tf.json
-terraform/*.conf
-*.tfstate
-terraform/env/*
-
+infra/env/*
+infra/.terraform.*
+infra/.terraform/
+infra/terraform.*
 node_modules/
 bootstrap
 build/

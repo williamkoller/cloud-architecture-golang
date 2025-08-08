@@ -47,10 +47,9 @@ A ideia é simples: você escreve seu código em Go ➡ compila ➡ empacota no 
 
 ```bash
 # 1️⃣ Compilar o Go e empacotar
-make deploy
+./deploy.sh
 
 # 2️⃣ Provisionar a infraestrutura
-cd terraform
 terraform init
 terraform apply -var="env=staging" -var="alert_email=seu@email.com" -auto-approve
 ```
