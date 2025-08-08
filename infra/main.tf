@@ -10,7 +10,7 @@ terraform {
 
 provider "aws" {
   region  = var.aws_region
-  profile = var.aws_profile # opcional, defina em variables.tf/ tfvars
+  profile = var.aws_profile
 }
 
 # ===== IAM =====
@@ -48,15 +48,14 @@ resource "aws_lambda_function" "golang_lambda" {
   function_name = "${var.env}-golang-api"
   role          = aws_iam_role.lambda_exec.arn
 
-  package_type  = "Image"
-  image_uri     = "${var.account_id}.dkr.ecr.${var.aws_region}.amazonaws.com/${aws_ecr_repository.lambda_repo.name}:${var.image_tag}"
+  package_type = "Image"
+  image_uri    = "${aws_ecr_repository.lambda_repo.repository_url}:${var.image_tag}"
 
   timeout     = 10
   memory_size = 128
+  publish     = true
 
-  # Se usava kms_key_arn e não tem a chave, comente/remova:
-  # kms_key_arn = aws_kms_key.lambda_env.arn
-  depends_on = [aws_iam_role_policy_attachment.lambda_basic_logs]
+  depends_on  = [aws_iam_role_policy_attachment.lambda_basic_logs]
 }
 
 # ===== API Gateway HTTP =====
@@ -139,3 +138,30 @@ resource "aws_route53_health_check" "lambda_health" {
 
 output "api_gateway_url" { value = aws_apigatewayv2_api.http_api.api_endpoint }
 output "lambda_image_uri" { value = aws_lambda_function.golang_lambda.image_uri }
+
+
+resource "aws_lambda_alias" "staging" {
+  name             = "staging"
+  function_name    = aws_lambda_function.golang_lambda.function_name
+  function_version = aws_lambda_function.golang_lambda.version
+}
+
+resource "aws_lambda_provisioned_concurrency_config" "pc" {
+  count = var.provisioned_concurrency > 0 ? 1 : 0
+
+  function_name                     = aws_lambda_function.golang_lambda.function_name
+  qualifier                         = aws_lambda_alias.staging.name
+  provisioned_concurrent_executions = var.provisioned_concurrency
+}
+
+resource "aws_apigatewayv2_route" "any_root" {
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "ANY /"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
+}
+
+resource "aws_apigatewayv2_route" "any_proxy" {
+  api_id    = aws_apigatewayv2_api.http_api.id
+  route_key = "ANY /{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
+}

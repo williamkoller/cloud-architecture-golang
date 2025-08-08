@@ -11,12 +11,17 @@ on:
       - 'go.mod'
       - 'go.sum'
 
+concurrency:
+  group: lambda-staging
+  cancel-in-progress: true
+
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: staging-lambda-go
   FUNCTION_NAME: staging-golang-api
   IMAGE_TAG: ${{ github.sha }}
   TARGET_PC: '2'
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
 
 jobs:
   deploy:
@@ -35,42 +40,59 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Compute common variables
+        id: vars
+        run: |
+          set -euo pipefail
+          IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
+          echo "Using IMAGE_URI=${IMAGE_URI}"
+
       - name: Ensure ECR repo exists
         run: |
+          set -euo pipefail
           aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1 \
             || aws ecr create-repository --repository-name "$ECR_REPOSITORY" >/dev/null
 
       - name: Login to ECR
         run: |
-          aws ecr get-login-password --region $AWS_REGION \
-            | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+          set -euo pipefail
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
       - name: Build image
         run: |
-          docker build --platform linux/amd64 -t $ECR_REPOSITORY:$IMAGE_TAG .
+          set -euo pipefail
+          # Força linux/amd64 para compatibilidade com Lambda
+          docker build --platform linux/amd64 -t "${ECR_REPOSITORY}:${IMAGE_TAG}" .
 
       - name: Tag image for ECR
         run: |
-          docker tag $ECR_REPOSITORY:$IMAGE_TAG \
-            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+          set -euo pipefail
+          docker tag "${ECR_REPOSITORY}:${IMAGE_TAG}" "${{ steps.vars.outputs.image_uri }}"
 
       - name: Push image
         run: |
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+          set -euo pipefail
+          docker push "${{ steps.vars.outputs.image_uri }}"
 
       - name: Update Lambda code to new image
         run: |
+          set -euo pipefail
           aws lambda update-function-code \
             --function-name "$FUNCTION_NAME" \
-            --image-uri ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG \
+            --image-uri "${{ steps.vars.outputs.image_uri }}" \
             --no-cli-pager
 
       - name: Wait for function to update
-        run: aws lambda wait function-updated --function-name "$FUNCTION_NAME"
+        run: |
+          set -euo pipefail
+          aws lambda wait function-updated --function-name "$FUNCTION_NAME"
 
       - name: Publish new version
         id: publish
         run: |
+          set -euo pipefail
           VERSION=$(aws lambda publish-version --function-name "$FUNCTION_NAME" --query 'Version' --output text)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Published version: $VERSION"
@@ -86,46 +108,65 @@ jobs:
             aws lambda create-alias --function-name "$FUNCTION_NAME" --name "$ALIAS" --function-version "$VERSION" --no-cli-pager
           fi
 
-      - name: Decide provisioned concurrency
+      - name: Decide provisioned concurrency safely
         id: pc
         run: |
           set -euo pipefail
-          TARGET_PC=${TARGET_PC:-2}
-          # Unreserved atual da conta
-          UNRESERVED=$(aws lambda get-account-settings --query 'AccountLimit.UnreservedConcurrentExecutions' --output text)
-          echo "Unreserved concurrent executions: $UNRESERVED"
-          echo "Target PC: $TARGET_PC"
+          # Coerção numérica e default
+          TARGET_PC="${TARGET_PC:-2}"
+          TARGET_PC=$((TARGET_PC + 0))
 
-          # regra: precisa sobrar >=10 após definir PC
-          if [ "$UNRESERVED" -ge $((TARGET_PC + 10)) ]; then
+          echo "Requested TARGET_PC: ${TARGET_PC}"
+
+          # Unreserved da conta (limite que precisa SOBRAR no mínimo 10)
+          UNRESERVED=$(aws lambda get-account-settings --query 'AccountLimit.UnreservedConcurrentExecutions' --output text)
+          UNRESERVED=$((UNRESERVED + 0))
+          echo "Account UnreservedConcurrentExecutions: ${UNRESERVED}"
+
+          # Regra: precisa sobrar >= 10 após reservar TARGET_PC
+          if [ "${UNRESERVED}" -ge $((TARGET_PC + 10)) ]; then
+            echo "Capacidade OK para provisioned concurrency = ${TARGET_PC}"
             echo "can_set_pc=true" >> "$GITHUB_OUTPUT"
-            echo "pc_value=$TARGET_PC" >> "$GITHUB_OUTPUT"
+            echo "pc_value=${TARGET_PC}" >> "$GITHUB_OUTPUT"
           else
-            echo "Sem capacidade suficiente para PC=$TARGET_PC (precisa sobrar >=10). Pulando."
+            echo "Sem capacidade suficiente para PC=${TARGET_PC} (precisa sobrar >= 10). Pulando."
             echo "can_set_pc=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set provisioned concurrency (conditional)
         if: steps.pc.outputs.can_set_pc == 'true'
         run: |
+          set -euo pipefail
+          # Pequena espera para garantir propagação da nova versão/alias
+          sleep 5
           aws lambda put-provisioned-concurrency-config \
             --function-name "$FUNCTION_NAME" \
             --qualifier staging \
             --provisioned-concurrent-executions "${{ steps.pc.outputs.pc_value }}"
 
-      - name: Wait PC to be READY
+      - name: Wait PC to be READY (with diagnostics)
         if: steps.pc.outputs.can_set_pc == 'true'
         run: |
+          set -euo pipefail
           for i in {1..30}; do
             STATUS=$(aws lambda get-provisioned-concurrency-config --function-name "$FUNCTION_NAME" --qualifier staging --query 'Status' --output text || true)
             echo "Provisioned Concurrency Status: $STATUS"
-            if [ "$STATUS" = "READY" ]; then exit 0; fi
-            if [ "$STATUS" = "FAILED" ]; then echo "PC failed"; exit 1; fi
+            if [ "$STATUS" = "READY" ]; then
+              echo "PC READY"
+              exit 0
+            fi
+            if [ "$STATUS" = "FAILED" ]; then
+              echo "PC FAILED. Detalhes:"
+              aws lambda get-provisioned-concurrency-config --function-name "$FUNCTION_NAME" --qualifier staging || true
+              exit 1
+            fi
             sleep 10
           done
-          echo "Timeout waiting PC to be READY"; exit 1
+          echo "Timeout esperando PC ficar READY"
+          exit 1
 
-      - name: Show effective image digest
+      - name: Show effective image digest (alias staging)
         run: |
+          set -euo pipefail
           aws lambda get-function --function-name "$FUNCTION_NAME" --qualifier staging \
             --query 'Code.ImageUri' --output text
