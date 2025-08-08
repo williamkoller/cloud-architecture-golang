@@ -16,6 +16,7 @@ env:
   ECR_REPOSITORY: staging-lambda-go
   FUNCTION_NAME: staging-golang-api
   IMAGE_TAG: ${{ github.sha }}
+  TARGET_PC: '2'
 
 jobs:
   deploy:
@@ -85,14 +86,35 @@ jobs:
             aws lambda create-alias --function-name "$FUNCTION_NAME" --name "$ALIAS" --function-version "$VERSION" --no-cli-pager
           fi
 
-      - name: Set provisioned concurrency (2)
+      - name: Decide provisioned concurrency
+        id: pc
+        run: |
+          set -euo pipefail
+          TARGET_PC=${TARGET_PC:-2}
+          # Unreserved atual da conta
+          UNRESERVED=$(aws lambda get-account-settings --query 'AccountLimit.UnreservedConcurrentExecutions' --output text)
+          echo "Unreserved concurrent executions: $UNRESERVED"
+          echo "Target PC: $TARGET_PC"
+
+          # regra: precisa sobrar >=10 após definir PC
+          if [ "$UNRESERVED" -ge $((TARGET_PC + 10)) ]; then
+            echo "can_set_pc=true" >> "$GITHUB_OUTPUT"
+            echo "pc_value=$TARGET_PC" >> "$GITHUB_OUTPUT"
+          else
+            echo "Sem capacidade suficiente para PC=$TARGET_PC (precisa sobrar >=10). Pulando."
+            echo "can_set_pc=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set provisioned concurrency (conditional)
+        if: steps.pc.outputs.can_set_pc == 'true'
         run: |
           aws lambda put-provisioned-concurrency-config \
             --function-name "$FUNCTION_NAME" \
             --qualifier staging \
-            --provisioned-concurrent-executions 2
+            --provisioned-concurrent-executions "${{ steps.pc.outputs.pc_value }}"
 
       - name: Wait PC to be READY
+        if: steps.pc.outputs.can_set_pc == 'true'
         run: |
           for i in {1..30}; do
             STATUS=$(aws lambda get-provisioned-concurrency-config --function-name "$FUNCTION_NAME" --qualifier staging --query 'Status' --output text || true)
