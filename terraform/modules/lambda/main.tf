@@ -9,7 +9,7 @@ resource "aws_lambda_function" "golang_lambda" {
   memory_size   = 256
   publish       = true
   architectures = ["x86_64"]
-  
+
   tags = {
     Name        = "${var.env}-golang-api"
     Environment = var.env

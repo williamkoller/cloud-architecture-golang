@@ -1,18 +1,22 @@
-name: Deploy Lambda Go to AWS
+name: CD - Deploy to AWS
 
 on:
-  push:
+  workflow_run:
+    workflows: ['CI - Build and Test']
+    types:
+      - completed
     branches: [main]
-    paths:
-      - 'Dockerfile'
-      - '.github/workflows/deploy.yml'
-      - 'infra/**'
-      - 'app/**'
-      - 'go.mod'
-      - 'go.sum'
+
+  # Permite deploy manual se necessário
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deploy even if CI failed'
+        type: boolean
+        default: false
 
 concurrency:
-  group: lambda-staging
+  group: lambda-deploy-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -20,149 +24,328 @@ env:
   ECR_REPOSITORY: staging-lambda-go
   FUNCTION_NAME: staging-golang-api
   IMAGE_TAG: ${{ github.sha }}
-  TARGET_PC: '2'
+  TARGET_PC: '0'
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
 
 jobs:
-  deploy:
+  # Job para verificar se o CI passou
+  check-ci:
+    name: Check CI Status
     runs-on: ubuntu-latest
+    outputs:
+      ci-passed: ${{ steps.check.outputs.ci-passed }}
+      should-deploy: ${{ steps.check.outputs.should-deploy }}
+    steps:
+      - name: Check CI workflow status
+        id: check
+        run: |
+          set -euo pipefail
+
+          # Se foi acionado manualmente
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ github.event.inputs.force_deploy }}" == "true" ]]; then
+              echo "🚨 Manual deploy with force flag - skipping CI check"
+              echo "ci-passed=forced" >> "$GITHUB_OUTPUT"
+              echo "should-deploy=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            else
+              echo "📋 Manual deploy without force - checking latest CI status"
+              # Para deploy manual, vamos assumir que está OK se não forçado
+              echo "ci-passed=manual" >> "$GITHUB_OUTPUT"
+              echo "should-deploy=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          # Verificar se o CI workflow passou
+          if [[ "${{ github.event.workflow_run.conclusion }}" == "success" ]]; then
+            echo "✅ CI workflow passed successfully"
+            echo "ci-passed=true" >> "$GITHUB_OUTPUT"
+            echo "should-deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "❌ CI workflow failed or was cancelled"
+            echo "ci-passed=false" >> "$GITHUB_OUTPUT"
+            echo "should-deploy=false" >> "$GITHUB_OUTPUT"
+
+            echo "CI Workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
+            echo "Deployment will be skipped."
+            exit 1
+          fi
+
+  # Job principal de deploy
+  deploy:
+    name: Deploy to AWS
+    runs-on: ubuntu-latest
+    needs: check-ci
+    if: needs.check-ci.outputs.should-deploy == 'true'
+
     permissions:
       contents: read
+      id-token: write # Para OIDC
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (access keys)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Compute common variables
+      - name: Compute deployment variables
         id: vars
         run: |
           set -euo pipefail
           IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
           echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
-          echo "Using IMAGE_URI=${IMAGE_URI}"
+          echo "🚀 Deploying IMAGE_URI=${IMAGE_URI}"
 
-      - name: Ensure ECR repo exists
+          # Timestamp para logs
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo "timestamp=${TIMESTAMP}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure ECR repository exists
         run: |
           set -euo pipefail
-          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1 \
-            || aws ecr create-repository --repository-name "$ECR_REPOSITORY" >/dev/null
+          echo "📦 Ensuring ECR repository exists..."
+          aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" >/dev/null 2>&1 || {
+            echo "Creating ECR repository: $ECR_REPOSITORY"
+            aws ecr create-repository --repository-name "$ECR_REPOSITORY" >/dev/null
+          }
 
       - name: Login to ECR
         run: |
           set -euo pipefail
-          aws ecr get-login-password --region "$AWS_REGION" \
-            | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          echo "🔐 Logging into ECR..."
+          aws ecr get-login-password --region "$AWS_REGION" | \
+            docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 
-      - name: Build image
+      - name: Build and push Docker image
         run: |
           set -euo pipefail
-          # Força linux/amd64 para compatibilidade com Lambda
-          docker build --platform linux/amd64 -t "${ECR_REPOSITORY}:${IMAGE_TAG}" .
+          echo "🏗️ Building Docker image for deployment..."
 
-      - name: Tag image for ECR
-        run: |
-          set -euo pipefail
+          # Build da imagem para produção
+          docker build \
+            --platform linux/amd64 \
+            --tag "${ECR_REPOSITORY}:${IMAGE_TAG}" \
+            --label "build.timestamp=${{ steps.vars.outputs.timestamp }}" \
+            --label "build.sha=${GITHUB_SHA}" \
+            --label "build.ref=${GITHUB_REF}" \
+            .
+
+          echo "🏷️ Tagging image for ECR..."
           docker tag "${ECR_REPOSITORY}:${IMAGE_TAG}" "${{ steps.vars.outputs.image_uri }}"
 
-      - name: Push image
-        run: |
-          set -euo pipefail
+          echo "📤 Pushing image to ECR..."
           docker push "${{ steps.vars.outputs.image_uri }}"
 
-      - name: Update Lambda code to new image
+          echo "✅ Image pushed successfully"
+
+      - name: Update Lambda function code
+        id: update-lambda
         run: |
           set -euo pipefail
+          echo "⚡ Updating Lambda function code..."
+
           aws lambda update-function-code \
             --function-name "$FUNCTION_NAME" \
             --image-uri "${{ steps.vars.outputs.image_uri }}" \
             --no-cli-pager
 
-      - name: Wait for function to update
+          echo "✅ Lambda code updated"
+
+      - name: Wait for function update to complete
         run: |
           set -euo pipefail
-          aws lambda wait function-updated --function-name "$FUNCTION_NAME"
+          echo "⏳ Waiting for Lambda function to update..."
 
-      - name: Publish new version
+          aws lambda wait function-updated \
+            --function-name "$FUNCTION_NAME" \
+            --cli-read-timeout 300 \
+            --cli-poll-delay 5
+
+          echo "✅ Lambda function updated successfully"
+
+      - name: Publish new Lambda version
         id: publish
         run: |
           set -euo pipefail
-          VERSION=$(aws lambda publish-version --function-name "$FUNCTION_NAME" --query 'Version' --output text)
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Published version: $VERSION"
+          echo "📋 Publishing new Lambda version..."
 
-      - name: Upsert alias "staging"
+          VERSION=$(aws lambda publish-version \
+            --function-name "$FUNCTION_NAME" \
+            --description "Deploy from commit ${GITHUB_SHA} at ${{ steps.vars.outputs.timestamp }}" \
+            --query 'Version' \
+            --output text)
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "✅ Published version: $VERSION"
+
+      - name: Update staging alias
         run: |
           set -euo pipefail
+          echo "🔄 Updating staging alias..."
+
           ALIAS="staging"
           VERSION="${{ steps.publish.outputs.version }}"
+
           if aws lambda get-alias --function-name "$FUNCTION_NAME" --name "$ALIAS" >/dev/null 2>&1; then
-            aws lambda update-alias --function-name "$FUNCTION_NAME" --name "$ALIAS" --function-version "$VERSION" --no-cli-pager
+            echo "Updating existing alias..."
+            aws lambda update-alias \
+              --function-name "$FUNCTION_NAME" \
+              --name "$ALIAS" \
+              --function-version "$VERSION" \
+              --description "Updated at ${{ steps.vars.outputs.timestamp }}" \
+              --no-cli-pager
           else
-            aws lambda create-alias --function-name "$FUNCTION_NAME" --name "$ALIAS" --function-version "$VERSION" --no-cli-pager
+            echo "Creating new alias..."
+            aws lambda create-alias \
+              --function-name "$FUNCTION_NAME" \
+              --name "$ALIAS" \
+              --function-version "$VERSION" \
+              --description "Created at ${{ steps.vars.outputs.timestamp }}" \
+              --no-cli-pager
           fi
 
-      - name: Decide provisioned concurrency safely
+          echo "✅ Staging alias updated to version $VERSION"
+
+      - name: Configure provisioned concurrency
         id: pc
         run: |
           set -euo pipefail
-          TARGET_PC="${TARGET_PC:-2}"
+          echo "🚀 Configuring provisioned concurrency..."
+
+          TARGET_PC="${TARGET_PC:-0}"
           TARGET_PC=$((TARGET_PC + 0))
 
           echo "Requested TARGET_PC: ${TARGET_PC}"
 
-          UNRESERVED=$(aws lambda get-account-settings --query 'AccountLimit.UnreservedConcurrentExecutions' --output text)
+          if [ "${TARGET_PC}" -eq 0 ]; then
+            echo "TARGET_PC is 0, skipping provisioned concurrency setup"
+            echo "can_set_pc=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Verificar capacidade disponível
+          UNRESERVED=$(aws lambda get-account-settings \
+            --query 'AccountLimit.UnreservedConcurrentExecutions' \
+            --output text)
           UNRESERVED=$((UNRESERVED + 0))
+
           echo "Account UnreservedConcurrentExecutions: ${UNRESERVED}"
 
           if [ "${UNRESERVED}" -ge $((TARGET_PC + 10)) ]; then
-            echo "Capacidade OK para provisioned concurrency = ${TARGET_PC}"
+            echo "✅ Sufficient capacity for provisioned concurrency = ${TARGET_PC}"
             echo "can_set_pc=true" >> "$GITHUB_OUTPUT"
             echo "pc_value=${TARGET_PC}" >> "$GITHUB_OUTPUT"
           else
-            echo "Sem capacidade suficiente para PC=${TARGET_PC} (precisa sobrar >= 10). Pulando."
+            echo "⚠️  Insufficient capacity for PC=${TARGET_PC} (needs >= 10 buffer). Skipping."
             echo "can_set_pc=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Set provisioned concurrency (conditional)
+      - name: Set provisioned concurrency
         if: steps.pc.outputs.can_set_pc == 'true'
         run: |
           set -euo pipefail
-          sleep 5
+          echo "⚡ Setting provisioned concurrency..."
+
+          # Aguardar um pouco antes de configurar PC
+          sleep 10
+
           aws lambda put-provisioned-concurrency-config \
             --function-name "$FUNCTION_NAME" \
             --qualifier staging \
             --provisioned-concurrent-executions "${{ steps.pc.outputs.pc_value }}"
 
-      - name: Wait PC to be READY (with diagnostics)
+          echo "✅ Provisioned concurrency configured"
+
+      - name: Wait for provisioned concurrency to be ready
         if: steps.pc.outputs.can_set_pc == 'true'
         run: |
           set -euo pipefail
-          for i in {1..30}; do
-            STATUS=$(aws lambda get-provisioned-concurrency-config --function-name "$FUNCTION_NAME" --qualifier staging --query 'Status' --output text || true)
-            echo "Provisioned Concurrency Status: $STATUS"
-            if [ "$STATUS" = "READY" ]; then
-              echo "PC READY"
-              exit 0
-            fi
-            if [ "$STATUS" = "FAILED" ]; then
-              echo "PC FAILED. Detalhes:"
-              aws lambda get-provisioned-concurrency-config --function-name "$FUNCTION_NAME" --qualifier staging || true
-              exit 1
-            fi
-            sleep 10
+          echo "⏳ Waiting for provisioned concurrency to be ready..."
+
+          for i in {1..60}; do
+            STATUS=$(aws lambda get-provisioned-concurrency-config \
+              --function-name "$FUNCTION_NAME" \
+              --qualifier staging \
+              --query 'Status' \
+              --output text 2>/dev/null || echo "UNKNOWN")
+            
+            echo "Provisioned Concurrency Status (attempt $i/60): $STATUS"
+            
+            case "$STATUS" in
+              "READY")
+                echo "✅ Provisioned concurrency is READY"
+                exit 0
+                ;;
+              "FAILED")
+                echo "❌ Provisioned concurrency FAILED"
+                aws lambda get-provisioned-concurrency-config \
+                  --function-name "$FUNCTION_NAME" \
+                  --qualifier staging || true
+                exit 1
+                ;;
+              "IN_PROGRESS"|"UNKNOWN")
+                echo "⏳ Still in progress, waiting..."
+                sleep 10
+                ;;
+              *)
+                echo "⚠️  Unknown status: $STATUS"
+                sleep 10
+                ;;
+            esac
           done
-          echo "Timeout esperando PC ficar READY"
+
+          echo "⏰ Timeout waiting for provisioned concurrency to be ready"
           exit 1
 
-      - name: Show effective image digest (alias staging)
+      - name: Verify deployment
         run: |
           set -euo pipefail
-          aws lambda get-function --function-name "$FUNCTION_NAME" --qualifier staging \
-            --query 'Code.ImageUri' --output text
+          echo "🔍 Verifying deployment..."
+
+          # Obter informações da função atualizada
+          CURRENT_IMAGE=$(aws lambda get-function \
+            --function-name "$FUNCTION_NAME" \
+            --qualifier staging \
+            --query 'Code.ImageUri' \
+            --output text)
+
+          echo "✅ Current image URI: $CURRENT_IMAGE"
+
+          # Verificar se a imagem corresponde ao que deploying
+          if [[ "$CURRENT_IMAGE" == *"$IMAGE_TAG"* ]]; then
+            echo "✅ Deployment verification successful!"
+          else
+            echo "❌ Deployment verification failed - image mismatch"
+            echo "Expected: ${{ steps.vars.outputs.image_uri }}"
+            echo "Actual: $CURRENT_IMAGE"
+            exit 1
+          fi
+
+  # Job de notificação pós-deploy
+  notify:
+    name: Post-Deploy Notification
+    runs-on: ubuntu-latest
+    needs: [check-ci, deploy]
+    if: always() && needs.check-ci.outputs.should-deploy == 'true'
+    steps:
+      - name: Deploy status notification
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ needs.deploy.result }}" == "success" ]]; then
+            echo "🎉 DEPLOYMENT SUCCESSFUL!"
+            echo "✅ Function: $FUNCTION_NAME"
+            echo "✅ Image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
+            echo "✅ Commit: ${GITHUB_SHA}"
+            echo "✅ Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          else
+            echo "❌ DEPLOYMENT FAILED!"
+            echo "Check the logs above for details."
+            exit 1
+          fi

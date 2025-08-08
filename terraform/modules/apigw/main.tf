@@ -2,16 +2,16 @@ resource "aws_apigatewayv2_api" "http_api" {
   name          = "${var.env}-cloud-architecture-golang-api"
   protocol_type = "HTTP"
   description   = "API Gateway para Lambda Go - ${var.env}"
-  
+
   cors_configuration {
     allow_credentials = false
     allow_headers     = ["content-type", "x-amz-date", "authorization", "x-api-key", "x-amz-security-token", "x-amz-user-agent"]
     allow_methods     = ["*"]
     allow_origins     = ["*"]
     expose_headers    = ["date", "keep-alive"]
-    max_age          = 86400
+    max_age           = 86400
   }
-  
+
   tags = {
     Name        = "${var.env}-cloud-architecture-golang-api"
     Environment = var.env
@@ -20,11 +20,11 @@ resource "aws_apigatewayv2_api" "http_api" {
 }
 
 resource "aws_apigatewayv2_integration" "lambda_integration" {
-  api_id                  = aws_apigatewayv2_api.http_api.id
-  integration_type        = "AWS_PROXY"
-  integration_uri         = var.lambda_invoke_arn
-  payload_format_version  = "2.0"
-  integration_method      = "POST"
+  api_id                 = aws_apigatewayv2_api.http_api.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = var.lambda_invoke_arn
+  payload_format_version = "2.0"
+  integration_method     = "POST"
 }
 
 resource "aws_apigatewayv2_route" "health_route" {
@@ -49,7 +49,7 @@ resource "aws_apigatewayv2_stage" "default_stage" {
   api_id      = aws_apigatewayv2_api.http_api.id
   name        = "$default"
   auto_deploy = true
-  
+
   tags = {
     Name        = "${var.env}-default-stage"
     Environment = var.env

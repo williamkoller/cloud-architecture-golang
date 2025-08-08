@@ -13,7 +13,7 @@ variable "aws_profile" {
 }
 
 variable "account_id" {
-  type = string 
+  type = string
 }
 
 variable "alert_email" {
