@@ -13,7 +13,7 @@ ARG TARGETARCH=amd64
 ARG CGO_ENABLED=0
 
 RUN CGO_ENABLED=$CGO_ENABLED GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -ldflags="-s -w" -o /out/bootstrap app/main.go
+    go build -ldflags="-s -w" -o /out/bootstrap /app/main.go
 
 
 FROM public.ecr.aws/lambda/provided:al2
