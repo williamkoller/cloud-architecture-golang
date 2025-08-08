@@ -32,6 +32,14 @@ func mapToUserResponse(u User) UserResponse {
 	}
 }
 
+func mapUsersToResponse(users []User) []UserResponse {
+	out := make([]UserResponse, 0, len(users))
+	for _, u := range users {
+		out = append(out, mapToUserResponse(u))
+	}
+	return out
+}
+
 func init() {
 	gin.SetMode(gin.ReleaseMode)
 	router = gin.Default()
@@ -39,17 +47,18 @@ func init() {
 	router.GET("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "OK")
 	})
-	router.GET("/user", handlerUsers)
+	router.GET("/users", handlerUsers)
 
 	ginLambdaV2 = ginadapter.NewV2(router)
 }
 
 func handlerUsers(c *gin.Context) {
-	user := User{
-		Name:  "William K",
-		Email: "william@mail.com",
+	users := []User{
+		{Name: "William K", Email: "william@mail.com"},
+		{Name: "Novo user test", Email: "novo-user@mail.com"},
 	}
-	response := mapToUserResponse(user)
+
+	response := mapUsersToResponse(users)
 	c.JSON(http.StatusOK, response)
 }
 
