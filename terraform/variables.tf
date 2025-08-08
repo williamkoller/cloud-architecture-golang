@@ -24,6 +24,10 @@ variable "image_tag" {
   type        = string
   default     = "latest"
   description = "The Docker image tag to be deployed."
+  validation {
+    condition     = length(var.image_tag) > 0
+    error_message = "image_tag não pode ser vazio."
+  }
 }
 
 variable "alert_email" {
