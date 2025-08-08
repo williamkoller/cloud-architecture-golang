@@ -1,0 +1,14 @@
+# Configuração básica do golangci-lint
+version: '2'
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - gofmt
+    - goimports

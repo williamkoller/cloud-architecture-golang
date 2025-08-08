@@ -1,4 +1,5 @@
-[![Deploy Lambda Go to AWS](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/deploy.yml/badge.svg)](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/deploy.yml)
+[![CI - Build and Test](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/ci.yml/badge.svg)](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/ci.yml)
+[![CD - Deploy to AWS](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/deploy.yml/badge.svg)](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/deploy.yml)
 
 # 🚀 Lambda Go com Terraform Modular na AWS
 
@@ -59,6 +60,65 @@ graph TD
     C[SNS Module] --> F
     E --> G[Route53 Module]
 ```
+
+---
+
+## 🔄 CI/CD Pipeline
+
+O projeto implementa um pipeline CI/CD separado e robusto:
+
+### 📋 **CI (Continuous Integration)** - `.github/workflows/ci.yml`
+
+**Executa em**: `push` para `main`, `develop`, `feature/*` e `pull_request` para `main`
+
+**Jobs**:
+
+1. **Lint & Code Quality**
+
+   - go vet
+   - golangci-lint
+   - Verificação de dependências
+
+2. **Unit Tests**
+
+   - Execução de testes unitários
+   - Cobertura de código
+   - Upload de relatórios
+
+3. **Build & Docker**
+
+   - Build da imagem Docker
+   - Validação da imagem
+   - Verificação do Terraform
+
+4. **Security Scan**
+   - Trivy vulnerability scanner
+   - Upload dos resultados para GitHub Security
+
+**⚠️ Deployment só ocorre se TODOS os checks do CI passarem!**
+
+### 🚀 **CD (Continuous Deployment)** - `.github/workflows/deploy.yml`
+
+**Executa em**:
+
+- Sucesso do workflow de CI na branch `main`
+- Manualmente com `workflow_dispatch`
+
+**Jobs**:
+
+1. **Check CI Status** - Verifica se o CI passou
+2. **Deploy to AWS** - Deploy completo na AWS
+3. **Post-Deploy Notification** - Notificação do resultado
+
+**Funcionalidades do Deploy**:
+
+- ✅ Verificação de dependências do CI
+- ✅ Build e push da imagem Docker
+- ✅ Atualização da função Lambda
+- ✅ Versionamento automático
+- ✅ Configuração de alias `staging`
+- ✅ Provisioned concurrency condicional
+- ✅ Verificação pós-deploy
 
 ---
 
@@ -131,11 +191,22 @@ aws_profile  = "terraform-user"
 provisioned_concurrency = 5
 ```
 
+### 3. Configure secrets do GitHub Actions:
+
+```bash
+# No seu repositório GitHub, vá em Settings > Secrets and variables > Actions
+# Adicione os seguintes secrets:
+
+AWS_ACCESS_KEY_ID=SEU_ACCESS_KEY
+AWS_SECRET_ACCESS_KEY=SEU_SECRET_KEY
+AWS_ACCOUNT_ID=SEU_ACCOUNT_ID
+```
+
 ---
 
 ## ▶️ Como Executar
 
-### 🚀 Deploy Completo (Staging)
+### 🚀 Deploy Local (Staging)
 
 ```bash
 # 1️⃣ Compilar o Go e empacotar
@@ -154,18 +225,36 @@ terraform plan -var-file="staging.tfvars"
 terraform apply -var-file="staging.tfvars"
 ```
 
-### 🏭 Deploy para Produção
+### 🏭 Deploy via CI/CD
 
 ```bash
-# 1️⃣ Build com tag específica
-docker build -t lambda-go:v1.0.0 .
-docker tag lambda-go:v1.0.0 SEU_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/production-lambda-go:v1.0.0
-docker push SEU_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/production-lambda-go:v1.0.0
+# 1️⃣ Fazer push para uma feature branch
+git checkout -b feature/nova-funcionalidade
+git add .
+git commit -m "feat: adiciona nova funcionalidade"
+git push origin feature/nova-funcionalidade
 
-# 2️⃣ Deploy da infraestrutura
-cd terraform
-terraform workspace new production  # ou terraform workspace select production
-terraform apply -var-file="production.tfvars"
+# 2️⃣ Criar Pull Request para main
+# - O CI executará automaticamente
+# - Verificará código, testes e build
+
+# 3️⃣ Fazer merge para main
+# - O CD executará automaticamente
+# - Fará deploy se CI passou com sucesso
+```
+
+### 🧪 Executar Testes Localmente
+
+```bash
+# Executar todos os testes
+go test -v ./...
+
+# Executar com cobertura
+go test -v -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out -o coverage.html
+
+# Executar linting
+golangci-lint run ./...
 ```
 
 ### 🧪 Testar a API
@@ -177,8 +266,8 @@ terraform output api_gateway_url
 # Testar endpoint de saúde
 curl https://SEU_API_ID.execute-api.us-east-1.amazonaws.com/health
 
-# Testar endpoint principal
-curl https://SEU_API_ID.execute-api.us-east-1.amazonaws.com/
+# Testar endpoint de usuários
+curl https://SEU_API_ID.execute-api.us-east-1.amazonaws.com/users
 ```
 
 ---
@@ -215,6 +304,8 @@ Após o deploy, o Terraform fornece as seguintes informações:
 - ✅ Alertas configurados para erros
 - ✅ Health checks automáticos
 - ✅ Variáveis sensíveis em `.tfvars` (não commitadas)
+- ✅ Security scanning no CI
+- ✅ Vulnerability scanning com Trivy
 
 ---
 
@@ -229,6 +320,15 @@ Após o deploy, o Terraform fornece as seguintes informações:
 
 ---
 
+## 🚦 Pipeline Status
+
+| Workflow | Status                                                                                                                                                                                              | Descrição                   |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| CI       | [![CI](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/ci.yml/badge.svg)](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/ci.yml)         | Build, Test, Lint, Security |
+| CD       | [![CD](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/deploy.yml/badge.svg)](https://github.com/williamkoller/cloud-architecture-golang/actions/workflows/deploy.yml) | Deploy para AWS             |
+
+---
+
 ## 🤝 Contribuição
 
 1. Fork o projeto
@@ -236,9 +336,5 @@ Após o deploy, o Terraform fornece as seguintes informações:
 3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
 4. Push para a branch (`git push origin feature/AmazingFeature`)
 5. Abra um Pull Request
-
----
-
-## 📝 Licença
-
-Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
+6. Aguarde o CI passar ✅
+7. Após merge, o CD fará deploy automaticamente 🚀
