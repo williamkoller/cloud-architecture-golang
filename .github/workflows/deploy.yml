@@ -8,6 +8,9 @@ on:
       - 'Dockerfile'
       - '.github/workflows/deploy.yml'
       - 'infra/**'
+      - 'app/**'
+      - 'go.mod'
+      - 'go.sum'
 
 env:
   AWS_REGION: us-east-1
@@ -23,11 +26,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.24.5'
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -35,26 +33,26 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Build Go binary
-        run: |
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bootstrap app/main.go
-
-      - name: Build Docker image
-        run: |
-          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
-
       - name: Login to Amazon ECR
         run: |
           aws ecr get-login-password --region $AWS_REGION \
             | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
 
+      - name: Build Docker image (multi-stage build)
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            -t $ECR_REPOSITORY:$IMAGE_TAG .
+
       - name: Tag Docker image
         run: |
-          docker tag $ECR_REPOSITORY:$IMAGE_TAG ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG \
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
 
       - name: Push to ECR
         run: |
-          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push \
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/$ECR_REPOSITORY:$IMAGE_TAG
 
       - name: Update Lambda function
         run: |
