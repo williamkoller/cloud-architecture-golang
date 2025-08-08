@@ -76,7 +76,7 @@ O projeto implementa um pipeline CI/CD separado e robusto:
 1. **Lint & Code Quality**
 
    - go vet
-   - golangci-lint
+   - gofmt (formatação)
    - Verificação de dependências
 
 2. **Unit Tests**
@@ -90,10 +90,6 @@ O projeto implementa um pipeline CI/CD separado e robusto:
    - Build da imagem Docker
    - Validação da imagem
    - Verificação do Terraform
-
-4. **Security Scan**
-   - Trivy vulnerability scanner
-   - Upload dos resultados para GitHub Security
 
 **⚠️ Deployment só ocorre se TODOS os checks do CI passarem!**
 
@@ -117,8 +113,8 @@ O projeto implementa um pipeline CI/CD separado e robusto:
 - ✅ Atualização da função Lambda
 - ✅ Versionamento automático
 - ✅ Configuração de alias `staging`
-- ✅ Provisioned concurrency condicional
 - ✅ Verificação pós-deploy
+- ✅ Deploy manual com opção de força
 
 ---
 

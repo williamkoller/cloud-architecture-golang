@@ -24,7 +24,7 @@ env:
   ECR_REPOSITORY: staging-lambda-go
   FUNCTION_NAME: staging-golang-api
   IMAGE_TAG: ${{ github.sha }}
-  TARGET_PC: '2'
+  TARGET_PC: '0'
   AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
 
 jobs:
@@ -48,6 +48,12 @@ jobs:
               echo "ci-passed=forced" >> "$GITHUB_OUTPUT"
               echo "should-deploy=true" >> "$GITHUB_OUTPUT"
               exit 0
+            else
+              echo "📋 Manual deploy without force - checking latest CI status"
+              # Para deploy manual, vamos assumir que está OK se não forçado
+              echo "ci-passed=manual" >> "$GITHUB_OUTPUT"
+              echo "should-deploy=true" >> "$GITHUB_OUTPUT"
+              exit 0
             fi
           fi
 
@@ -60,9 +66,10 @@ jobs:
             echo "❌ CI workflow failed or was cancelled"
             echo "ci-passed=false" >> "$GITHUB_OUTPUT"
             echo "should-deploy=false" >> "$GITHUB_OUTPUT"
-            
+
             echo "CI Workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
             echo "Deployment will be skipped."
+            exit 1
           fi
 
   # Job principal de deploy

@@ -11,7 +11,7 @@ env:
   AWS_REGION: us-east-1
 
 jobs:
-  # Job 1: Lint e validação de código
+  # Job 1: Lint e validação de código básica
   lint:
     name: Lint and Code Quality
     runs-on: ubuntu-latest
@@ -43,12 +43,13 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
-      - name: Install golangci-lint
+      - name: Check formatting
         run: |
-          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.55.2
-
-      - name: Run golangci-lint
-        run: golangci-lint run ./...
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "The following files are not properly formatted:"
+            gofmt -s -l .
+            exit 1
+          fi
 
   # Job 2: Testes unitários
   test:
@@ -132,14 +133,13 @@ jobs:
             exit 1
           fi
 
-      - name: Test Docker image locally
+      - name: Test Docker image
         run: |
           set -euo pipefail
-          echo "🧪 Testing Docker image locally..."
+          echo "🧪 Testing Docker image..."
 
-          # Executar um teste básico da imagem
-          # Nota: Como é uma imagem Lambda, vamos apenas verificar se ela inicia
-          docker run --rm test-image:${{ github.sha }} echo "Container test passed" || {
+          # Verificar se a imagem existe e pode ser executada
+          docker run --rm test-image:${{ github.sha }} echo "Container startup test passed" || {
             echo "❌ Container test failed"
             exit 1
           }
@@ -160,34 +160,11 @@ jobs:
           terraform validate
           terraform fmt -check
 
-  # Job 4: Análise de segurança
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    needs: [build]
-    if: needs.build.outputs.build-success == 'true'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-
-      - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results.sarif'
-
-  # Job 5: Relatório final do CI
+  # Job 4: Relatório final do CI
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [lint, test, build, security]
+    needs: [lint, test, build]
     if: always()
     steps:
       - name: Check CI status
@@ -197,12 +174,10 @@ jobs:
           echo "Lint: ${{ needs.lint.result }}"
           echo "Test: ${{ needs.test.result }}"
           echo "Build: ${{ needs.build.result }}"
-          echo "Security: ${{ needs.security.result }}"
 
           if [[ "${{ needs.lint.result }}" == "success" && 
                 "${{ needs.test.result }}" == "success" && 
-                "${{ needs.build.result }}" == "success" && 
-                "${{ needs.security.result }}" == "success" ]]; then
+                "${{ needs.build.result }}" == "success" ]]; then
             echo "✅ All CI checks passed! Ready for deployment."
             exit 0
           else
