@@ -3,6 +3,13 @@ service: go-api
 provider:
   name: aws
   region: us-east-1
+  architecture: x86_64
+  logs:
+    httpApi: true
+  httpApi:
+    cors: true
+  timeout: 10
+  memorySize: 256
 
 ecr:
   images:
@@ -14,5 +21,8 @@ functions:
     image: appimage
     events:
       - httpApi:
-          path: /health
-          method: GET
+          path: /
+          method: ANY
+      - httpApi:
+          path: /{proxy+}
+          method: ANY
