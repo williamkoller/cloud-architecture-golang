@@ -1,7 +1,6 @@
-infra/env/*
-infra/.terraform.*
-infra/.terraform/
-infra/terraform.*
 node_modules/
 bootstrap
 build/
+terraform/*.tfvars
+terraform/terraform.*
+terraform/.terraform/
