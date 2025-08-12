@@ -4,3 +4,4 @@ build/
 terraform/*.tfvars
 terraform/terraform.*
 terraform/.terraform/
+coverage/
