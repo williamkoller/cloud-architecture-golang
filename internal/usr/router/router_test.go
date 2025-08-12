@@ -124,7 +124,6 @@ func TestMapUsersToResponse(t *testing.T) {
 	}
 }
 
-
 func TestHandlerUsers(t *testing.T) {
 	router := gin.New()
 	RegisterUserRoutes(router)
@@ -221,7 +220,6 @@ func TestRegisterUserRoutes(t *testing.T) {
 	}
 }
 
-
 func BenchmarkMapToUserResponse(b *testing.B) {
 	user := User{
 		Name:  "Benchmark User",
@@ -293,7 +291,6 @@ func TestUserResponseStruct(t *testing.T) {
 	assert.Equal(t, "Test User", unmarshaled["name"])
 	assert.Equal(t, "test@exemplo.com", unmarshaled["email"])
 }
-
 
 func TestMapUsersToResponseCasosExtremos(t *testing.T) {
 	t.Run("lista_grande_usuarios", func(t *testing.T) {
