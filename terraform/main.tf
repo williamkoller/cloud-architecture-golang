@@ -106,3 +106,8 @@ output "health_check_id" {
   value       = module.route53.health_check_id
   description = "ID do health check Route53"
 }
+
+output "sns_topic_arn" {
+  value       = module.sns.topic_arn
+  description = "ARN do tópico SNS para notificações"
+}
