@@ -351,16 +351,49 @@ jobs:
     needs: [check-ci, deploy]
     if: always() && needs.check-ci.outputs.should-deploy == 'true'
     steps:
+      - name: Configure AWS credentials
+        if: needs.deploy.result == 'success'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Deploy status notification
         run: |
           set -euo pipefail
+
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
           if [[ "${{ needs.deploy.result }}" == "success" ]]; then
             echo "🎉 DEPLOYMENT SUCCESSFUL!"
             echo "✅ Function: $FUNCTION_NAME"
             echo "✅ Image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}"
             echo "✅ Commit: ${GITHUB_SHA}"
-            echo "✅ Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            echo "✅ Timestamp: $TIMESTAMP"
+            
+            # Enviar notificação SNS para deploy bem-sucedido
+            SNS_TOPIC_ARN="arn:aws:sns:${AWS_REGION}:${AWS_ACCOUNT_ID}:staging-lambda-alerts"
+            
+            SUBJECT="Deploy Bem-Sucedido - Cloud Architecture Golang"
+            MESSAGE=$(printf "Deploy realizado com sucesso!\n\nDetalhes do Deploy:\n- Funcao Lambda: %s\n- Imagem: %s\n- Commit: %s\n- Branch: %s\n- Timestamp: %s\n- URL do Workflow: https://github.com/%s/actions/runs/%s\n\nA aplicacao esta rodando e pronta para uso!" \
+              "$FUNCTION_NAME" \
+              "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPOSITORY}:${IMAGE_TAG}" \
+              "${GITHUB_SHA}" \
+              "${GITHUB_REF_NAME}" \
+              "$TIMESTAMP" \
+              "${GITHUB_REPOSITORY}" \
+              "${GITHUB_RUN_ID}")
+
+            echo "📧 Enviando notificação SNS..."
+            aws sns publish \
+              --topic-arn "$SNS_TOPIC_ARN" \
+              --subject "$SUBJECT" \
+              --message "$MESSAGE" \
+              --region "$AWS_REGION"
+            
+            echo "✅ Notificação SNS enviada com sucesso!"
+            
           else
             echo "❌ DEPLOYMENT FAILED!"
             echo "Check the logs above for details."
