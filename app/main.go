@@ -12,6 +12,8 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	ginadapter "github.com/awslabs/aws-lambda-go-api-proxy/gin"
 	"github.com/gin-gonic/gin"
+	"github.com/williamkoller/cloud-architecture-golang/internal/usr/handler"
+	"github.com/williamkoller/cloud-architecture-golang/internal/usr/repository"
 	usr_router "github.com/williamkoller/cloud-architecture-golang/internal/usr/router"
 )
 
@@ -23,12 +25,15 @@ var (
 func init() {
 	gin.SetMode(gin.ReleaseMode)
 	router = gin.Default()
+	api := router.Group("/api")
 
 	router.GET("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "OK")
 	})
 
-	usr_router.RegisterUserRoutes(router)
+	userRepo := repository.NewInMemoryUserRepository()
+	useHandler := handler.NewUserHandler(userRepo)
+	usr_router.RegisterUserRoutes(api, useHandler)
 
 	ginLambdaV2 = ginadapter.NewV2(router)
 }
