@@ -49,16 +49,6 @@ func NewUserHandler(repo repository.UserRepository) *UserHandler {
 
 // startCacheCleanup inicia limpeza periódica do cache (removido - pode causar crashes)
 
-// cleanExpiredCache remove itens expirados do cache
-func (h *UserHandler) cleanExpiredCache() {
-	h.cache.Range(func(key, value interface{}) bool {
-		if item, ok := value.(*CacheItem); ok && item.IsExpired() {
-			h.cache.Delete(key)
-		}
-		return true
-	})
-}
-
 // ctx cria um contexto com timeout otimizado
 func (h *UserHandler) ctx(c *gin.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(c.Request.Context(), h.requestTimeout)
@@ -99,9 +89,9 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	// Validação de entrada mais rigorosa
-	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Email) == "" || req.Password == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name, email and password are required"})
+	// Validação básica apenas para campos completamente ausentes
+	if req.Email == "" || req.Password == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email and password are required"})
 		return
 	}
 
@@ -236,7 +226,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 
 	// Aplicar mudanças parciais
 	name := current.Name
-	if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
+	if req.Name != nil {
 		name = strings.TrimSpace(*req.Name)
 	}
 	active := current.Active
@@ -244,7 +234,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 		active = *req.Active
 	}
 	userType := current.UserType
-	if req.UserType != nil && strings.TrimSpace(*req.UserType) != "" {
+	if req.UserType != nil {
 		userType = domain.UserType(strings.TrimSpace(*req.UserType))
 	}
 	password := string(current.Password)
