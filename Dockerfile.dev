@@ -1,0 +1,57 @@
+FROM golang:1.24.5-alpine AS deps
+LABEL stage="deps"
+
+RUN apk add --no-cache \
+    ca-certificates \
+    git \
+    curl
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+
+RUN go mod download && \
+    go mod verify
+
+FROM deps AS builder
+LABEL stage="builder"
+
+COPY . .
+
+ARG CGO_ENABLED=0
+ARG GOOS=linux
+ARG GOARCH=amd64
+
+RUN CGO_ENABLED=${CGO_ENABLED} GOOS=${GOOS} GOARCH=${GOARCH} \
+    go build -ldflags="-s -w -extldflags '-static'" -o /tmp/app ./app/main.go
+
+
+FROM alpine:3.20 AS runtime
+LABEL stage="runtime"
+
+RUN apk add --no-cache \
+    ca-certificates \
+    curl \
+    tzdata && \
+    update-ca-certificates
+
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -u 1001 -S appuser -G appgroup
+
+WORKDIR /app
+
+COPY --from=builder --chown=appuser:appgroup /tmp/app ./app
+
+RUN chmod +x ./app
+
+USER appuser
+
+ENV GIN_MODE=release
+ENV LOCAL=true
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+CMD ["./app"]

@@ -1,0 +1,35 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    env: dev
+    monitor: 'cloud-arch-golang'
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: prometheus
+
+  - job_name: 'usr-api'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['api:8080']
+        labels:
+          service: usr-api
+          version: '1.0.0'
+          environment: docker
+
+  - job_name: 'usr-api-host'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['172.17.0.1:8080']
+        labels:
+          service: usr-api
+          version: '1.0.0'
+          environment: host

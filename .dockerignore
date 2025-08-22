@@ -1,0 +1,58 @@
+# Git
+.git
+.gitignore
+README.md
+
+# Development files
+.air.toml
+*.log
+*.tmp
+
+# Test files
+*_test.go
+coverage/
+test/
+
+# Documentation
+docs/
+*.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies
+node_modules/
+vendor/
+
+# Build outputs
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Monitoring stack
+monitoring/
+dashboards/
+prometheus/
+load-tests/
+
+# Terraform
+terraform/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+tmp/
+temp/ 

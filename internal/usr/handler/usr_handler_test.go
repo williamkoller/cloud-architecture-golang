@@ -12,11 +12,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/williamkoller/cloud-architecture-golang/internal/metrics"
 	"github.com/williamkoller/cloud-architecture-golang/internal/usr/domain"
 	"github.com/williamkoller/cloud-architecture-golang/internal/usr/domain/vo"
 	"github.com/williamkoller/cloud-architecture-golang/internal/usr/mappers"
 	"github.com/williamkoller/cloud-architecture-golang/internal/usr/repository"
 )
+
+// init metrics once for all tests
+func init() {
+	metrics.Init("test-service", "test-version")
+}
 
 // ---- stub repo ----
 
@@ -59,7 +65,6 @@ func (s *stubRepo) Delete(ctx context.Context, email vo.Email) error {
 	return nil
 }
 
-
 func routerWithUserRoutes(h *UserHandler) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -98,7 +103,6 @@ func mustUser(t *testing.T, name, email string, active bool, ut domain.UserType)
 	}
 	return u
 }
-
 
 func TestCreateUser_Success(t *testing.T) {
 	var captured domain.User
@@ -346,7 +350,7 @@ func TestUpdateUser_BindError_And_DomainError(t *testing.T) {
 	h1 := NewUserHandler(repo1)
 	r1 := routerWithUserRoutes(h1)
 	w1 := doJSON(t, r1, http.MethodPatch, "/users/ana@example.com", map[string]any{
-		"password": "123", 
+		"password": "123",
 	})
 	if w1.Code != http.StatusBadRequest {
 		t.Fatalf("bind error: got %d, want %d", w1.Code, http.StatusBadRequest)
