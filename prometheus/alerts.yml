@@ -1,0 +1,71 @@
+groups:
+  - name: usr-api
+    rules:
+      - alert: HighErrorRate5xx
+        expr: |
+          sum by (route) (rate(http_requests_total{status=~"5.."}[5m]))
+          / ignoring(status) group_left
+          sum by (route) (rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: usr-api
+        annotations:
+          summary: 'High 5xx error rate (>5%) on {{ $labels.route }}'
+          description: 'Proporção de 5xx acima de 5% nos últimos 5m na rota {{ $labels.route }}.'
+
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le, route) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+          service: usr-api
+        annotations:
+          summary: 'Alta latência p95 na rota {{ $labels.route }}'
+          description: 'p95 > 300ms nos últimos 5m na rota {{ $labels.route }}.'
+
+      - alert: PanicsDetected
+        expr: increase(panic_recovered_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: usr-api
+        annotations:
+          summary: 'Panics detectados na aplicação'
+          description: 'panic_recovered_total aumentou nos últimos 5m. Valor atual: {{ $value }}.'
+
+      - alert: HighRequestRate
+        expr: |
+          sum by (service) (rate(http_requests_total[5m])) > 100
+        for: 2m
+        labels:
+          severity: info
+          service: usr-api
+        annotations:
+          summary: 'Taxa de requisições elevada'
+          description: 'Taxa de requisições > 100 req/s nos últimos 5m. Valor atual: {{ $value }} req/s.'
+
+  - name: infrastructure
+    rules:
+      - alert: PrometheusDown
+        expr: up{job="prometheus"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: prometheus
+        annotations:
+          summary: 'Prometheus está indisponível'
+          description: 'O serviço Prometheus não está respondendo há mais de 1 minuto.'
+
+      - alert: TargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Target {{ $labels.instance }} está down'
+          description: 'O target {{ $labels.instance }} do job {{ $labels.job }} está indisponível há mais de 2 minutos.'

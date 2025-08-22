@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: default
+    orgId: 1
+    folder: 'cloud-arch-golang'
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    updateIntervalSeconds: 10
+    options:
+      path: /etc/grafana/dashboards
