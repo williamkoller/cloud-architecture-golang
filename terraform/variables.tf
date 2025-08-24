@@ -42,15 +42,24 @@ variable "image_tag" {
   }
 }
 
-# Variáveis para domínio customizado (opcional)
 variable "custom_domain_name" {
   type        = string
   description = "Nome do domínio customizado para a API (ex: api.seudominio.com)"
-  default     = "cloud-architecture-golang.com"
 }
 
-variable "certificate_arn" {
+variable "grafana_name" {
+  description = "Nome do workspace Grafana"
   type        = string
-  description = "ARN do certificado SSL/TLS para o domínio customizado"
-  default     = ""
+  default     = "cloud-arch-grafana"
+}
+
+variable "iam_role_arn" {
+  description = "ARN da role IAM para o Grafana"
+  type        = string
+}
+
+variable "alias" {
+  description = "Alias para o workspace Prometheus"
+  type        = string
+  default     = "prometheus"
 }

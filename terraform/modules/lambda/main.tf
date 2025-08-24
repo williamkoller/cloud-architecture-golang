@@ -15,6 +15,14 @@ resource "aws_lambda_function" "golang_lambda" {
     Environment = var.env
     Project     = "cloud-architecture-golang"
   }
+
+  lifecycle {
+    # Evita conflitos quando a função já existe
+    ignore_changes = [
+      function_name,
+      package_type
+    ]
+  }
 }
 
 # Alias para staging (opcional, pode ser removido se não necessário)

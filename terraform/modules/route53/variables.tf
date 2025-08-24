@@ -7,3 +7,8 @@ variable "api_endpoint" {
   type        = string
   description = "API Gateway endpoint URL"
 }
+
+variable "domain" {
+  type = string
+  default = "cloud-arch-golang.com"
+}

@@ -18,11 +18,6 @@ module "apigw" {
   env                  = var.env
   lambda_invoke_arn    = module.lambda.lambda_invoke_arn
   lambda_function_name = module.lambda.lambda_function_name
-
-  # Domínio customizado (opcional)
-  custom_domain_name = var.custom_domain_name
-  certificate_arn    = var.certificate_arn
-
   depends_on = [module.lambda]
 }
 
@@ -63,6 +58,22 @@ module "route53" {
 
   api_endpoint = module.apigw.api_endpoint
   depends_on   = [module.apigw]
+  domain = var.custom_domain_name
+}
+
+module "prometheus" {
+  source = "./modules/prometheus"
+  alias = var.alias
+  environment = var.env
+}
+
+module "grafana" {
+  source = "./modules/grafana"
+  name = var.grafana_name
+  iam_role_arn = var.iam_role_arn
+  prometheus_endpoint = module.prometheus.workspace_prometheus_endpoint
+  environment = var.env
+  depends_on = [module.prometheus]
 }
 
 module "sns" {
@@ -71,7 +82,6 @@ module "sns" {
   alert_email = var.alert_email
 }
 
-# Outputs principais
 output "api_gateway_url" {
   value       = module.apigw.api_endpoint
   description = "URL da API Gateway"
@@ -110,4 +120,24 @@ output "health_check_id" {
 output "sns_topic_arn" {
   value       = module.sns.topic_arn
   description = "ARN do tópico SNS para notificações"
+}
+
+output "prometheus_workspace_endpoint" {
+  value       = module.prometheus.workspace_prometheus_endpoint
+  description = "Endpoint do workspace Prometheus"
+}
+
+output "prometheus_workspace_id" {
+  value       = module.prometheus.workspace_id
+  description = "ID do workspace Prometheus"
+}
+
+output "grafana_endpoint" {
+  value       = module.grafana.grafana_endpoint
+  description = "Endpoint do workspace Grafana"
+}
+
+output "grafana_workspace_id" {
+  value       = module.grafana.grafana_id
+  description = "ID do workspace Grafana"
 }
