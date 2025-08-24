@@ -61,21 +61,6 @@ module "route53" {
   domain = var.custom_domain_name
 }
 
-module "prometheus" {
-  source = "./modules/prometheus"
-  alias = var.alias
-  environment = var.env
-}
-
-module "grafana" {
-  source = "./modules/grafana"
-  name = var.grafana_name
-  iam_role_arn = var.iam_role_arn
-  prometheus_endpoint = module.prometheus.workspace_prometheus_endpoint
-  environment = var.env
-  depends_on = [module.prometheus]
-}
-
 module "sns" {
   source      = "./modules/sns"
   env         = var.env
@@ -122,22 +107,22 @@ output "sns_topic_arn" {
   description = "ARN do tópico SNS para notificações"
 }
 
-output "prometheus_workspace_endpoint" {
-  value       = module.prometheus.workspace_prometheus_endpoint
-  description = "Endpoint do workspace Prometheus"
-}
+# output "prometheus_workspace_endpoint" {
+#   value       = module.prometheus.workspace_prometheus_endpoint
+#   description = "Endpoint do workspace Prometheus"
+# }
 
-output "prometheus_workspace_id" {
-  value       = module.prometheus.workspace_id
-  description = "ID do workspace Prometheus"
-}
+# output "prometheus_workspace_id" {
+#   value       = module.prometheus.workspace_id
+#   description = "ID do workspace Prometheus"
+# }
 
-output "grafana_endpoint" {
-  value       = module.grafana.grafana_endpoint
-  description = "Endpoint do workspace Grafana"
-}
+# output "grafana_endpoint" {
+#   value       = module.grafana.grafana_endpoint
+#   description = "Endpoint do workspace Grafana"
+# }
 
-output "grafana_workspace_id" {
-  value       = module.grafana.grafana_id
-  description = "ID do workspace Grafana"
-}
+# output "grafana_workspace_id" {
+#   value       = module.grafana.grafana_id
+#   description = "ID do workspace Grafana"
+# }
