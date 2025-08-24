@@ -10,5 +10,4 @@ variable "api_endpoint" {
 
 variable "domain" {
   type = string
-  default = "cloud-arch-golang.com"
 }

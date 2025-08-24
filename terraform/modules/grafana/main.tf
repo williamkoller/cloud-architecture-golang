@@ -5,26 +5,6 @@ resource "aws_grafana_workspace" "grafana" {
   role_arn                  = var.iam_role_arn
   data_sources              = ["CLOUDWATCH", "PROMETHEUS"]
   permission_type           = "SERVICE_MANAGED"
-  
-  # Configuração simplificada compatível com Grafana 10.4
-  # A configuração de datasources será feita após a criação via API/UI
-  # configuration = jsonencode({
-  #   datasources = {
-  #     datasources = [
-  #       {
-  #         name   = "CloudWatch"
-  #         type   = "cloudwatch"
-  #         access = "proxy"
-  #       },
-  #       {
-  #         name   = "Prometheus"
-  #         type   = "prometheus"
-  #         access = "proxy"
-  #         url    = var.prometheus_endpoint
-  #       }
-  #     ]
-  #   }
-  # })
 
   tags = {
     Name        = var.name
@@ -40,7 +20,6 @@ resource "aws_grafana_workspace" "grafana" {
   }
 }
 
-# Output para acesso
 output "grafana_endpoint" {
   value = aws_grafana_workspace.grafana.endpoint
 }
