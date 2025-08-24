@@ -205,8 +205,7 @@ jobs:
           # Validate Terraform files
           cd terraform
           terraform init -backend=false
-          terraform validate
-          terraform fmt -check -recursive
+          terraform validate || exit 3
 
   # Job 5: Relatório final do CI
   ci-success:

@@ -7,3 +7,7 @@ resource "aws_route53_health_check" "lambda_health" {
   request_interval  = 30
   regions           = ["us-east-1", "us-west-2", "eu-west-1"]
 }
+
+resource "aws_route53_zone" "main" {
+  name = var.domain
+}

@@ -41,8 +41,32 @@ resource "aws_iam_role_policy_attachment" "api_gateway_logs" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
 }
 
-# Account-level setting para API Gateway logging
-# Comentado temporariamente devido a problemas de permissão
-# resource "aws_api_gateway_account" "main" {
-#   cloudwatch_role_arn = aws_iam_role.api_gateway_logs.arn
-# }
+
+resource "aws_iam_role" "grafana_role" {
+  name = "grafana-service-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "grafana.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [name]
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "grafana_policy_attach" {
+  role       = aws_iam_role.grafana_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonGrafanaCloudWatchAccess"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
